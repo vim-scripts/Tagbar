@@ -4,7 +4,7 @@
 " Author:      Jan Larres <jan@majutsushi.net>
 " Licence:     Vim licence
 " Website:     http://majutsushi.github.com/tagbar/
-" Version:     1.1
+" Version:     1.2
 " Note:        This plugin was heavily inspired by the 'Taglist' plugin by
 "              Yegappan Lakshmanan and uses a small amount of code from it.
 "
@@ -536,8 +536,9 @@ function! s:InitTypes()
         \ 'f:methods',
         \ 'F:singleton methods'
     \ ]
-    let type_ruby.kinds2scope = {
-        \ 'c' : 'class'
+    let type_ruby.kind2scope = {
+        \ 'c' : 'class',
+        \ 'm' : 'class'
     \ }
     let type_ruby.scope2kind = {
         \ 'class' : 'c'
@@ -1033,12 +1034,10 @@ function! s:ProcessFile(fname, ftype)
 
     if has_key(typeinfo, 'scopes') && !empty(typeinfo.scopes)
         let scopedtags = []
-        for scope in typeinfo.scopes
-            let is_scoped = 'has_key(typeinfo.kind2scope, v:val.fields.kind) ||
-                           \ has_key(v:val.fields, scope)'
-            let scopedtags += filter(copy(fileinfo.tags), is_scoped)
-            call filter(fileinfo.tags, '!(' . is_scoped . ')')
-        endfor
+        let is_scoped = 'has_key(typeinfo.kind2scope, v:val.fields.kind) ||
+                       \ has_key(v:val, "scope")'
+        let scopedtags += filter(copy(fileinfo.tags), is_scoped)
+        call filter(fileinfo.tags, '!(' . is_scoped . ')')
 
         let processedtags = []
         call s:AddScopedTags(scopedtags, processedtags, '', '', 0, typeinfo)
