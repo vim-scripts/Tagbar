@@ -3,7 +3,7 @@
 Author:		Jan Larres <jan@majutsushi.net>
 Licence:	Vim licence, see |license|
 Homepage:	http://majutsushi.github.com/tagbar/
-Version:	2.0
+Version:	2.0.1
 
 ==============================================================================
 Contents					*tagbar* *tagbar-contents*
@@ -339,7 +339,9 @@ g:tagbar_sort~
 Default: 1
 
 If this option is set the tags are sorted according to their name. If it is
-unset they are sorted according to their order in the source file.
+unset they are sorted according to their order in the source file. Note that
+in the second case Pseudo-tags are always sorted before normal tags of the
+same kind since they don't have a real position in the file.
 
 Example:
 >
@@ -777,6 +779,9 @@ files.
 
 ==============================================================================
 8. History						*tagbar-history*
+
+2.0.1 (2011-04-26)
+    - Fix sorting bug when 'ignorecase' is set
 
 2.0 (2011-04-26)
     - Folding now works correctly. Folds will be preserved when leaving the
