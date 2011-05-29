@@ -4,7 +4,7 @@
 " Author:      Jan Larres <jan@majutsushi.net>
 " Licence:     Vim licence
 " Website:     http://majutsushi.github.com/tagbar/
-" Version:     2.0.1
+" Version:     2.1
 " Note:        This plugin was heavily inspired by the 'Taglist' plugin by
 "              Yegappan Lakshmanan and uses a small amount of code from it.
 "
@@ -25,9 +25,17 @@ endif
 " Initialization {{{1
 
 " Basic init {{{2
+
+if v:version < 700
+    echomsg 'Tagbar: Vim version is too old, Tagbar requires at least 7.0'
+    finish
+endif
+
 if !exists('g:tagbar_ctags_bin')
     if executable('ctags-exuberant')
         let g:tagbar_ctags_bin = 'ctags-exuberant'
+    elseif executable('exuberant-ctags')
+        let g:tagbar_ctags_bin = 'exuberant-ctags'
     elseif executable('exctags')
         let g:tagbar_ctags_bin = 'exctags'
     elseif executable('ctags')
@@ -48,6 +56,16 @@ else
         finish
     endif
 endif
+
+redir => s:ftype_out
+silent filetype
+redir END
+if s:ftype_out !~# 'detection:ON'
+    echomsg 'Tagbar: Filetype detection is turned off, skipping plugin'
+    unlet s:ftype_out
+    finish
+endif
+unlet s:ftype_out
 
 let g:loaded_tagbar = 1
 
@@ -91,6 +109,10 @@ if !exists('g:tagbar_autoshowtag')
     let g:tagbar_autoshowtag = 0
 endif
 
+if !exists('g:tagbar_systemenc')
+    let g:tagbar_systemenc = &encoding
+endif
+
 if has('multi_byte') && has('unix') && &encoding == 'utf-8' &&
  \ (empty(&termencoding) || &termencoding == 'utf-8')
     let s:icon_closed = '▶'
@@ -105,6 +127,7 @@ endif
 
 let s:type_init_done    = 0
 let s:autocommands_done = 0
+let s:checked_ctags     = 0
 let s:window_expanded   = 0
 
 let s:access_symbols = {
@@ -112,6 +135,8 @@ let s:access_symbols = {
     \ 'protected' : '#',
     \ 'private'   : '-'
 \ }
+
+autocmd SessionLoadPost * nested call s:RestoreSession()
 
 " s:InitTypes() {{{2
 function! s:InitTypes()
@@ -808,6 +833,42 @@ function! s:GetUserTypeDefs()
     return defdict
 endfunction
 
+" s:RestoreSession() {{{2
+" Properly restore Tagbar after a session got loaded
+function! s:RestoreSession()
+    let tagbarwinnr = bufwinnr('__Tagbar__')
+    if tagbarwinnr == -1
+        " Tagbar wasn't open in the saved session, nothing to do
+        return
+    else
+        let in_tagbar = 1
+        if winnr() != tagbarwinnr
+            execute tagbarwinnr . 'wincmd w'
+            let in_tagbar = 0
+        endif
+    endif
+
+    if !s:type_init_done
+        call s:InitTypes()
+    endif
+
+    if !s:checked_ctags
+        if !s:CheckForExCtags()
+            return
+        endif
+    endif
+
+    call s:InitWindow(g:tagbar_autoclose)
+
+    " Leave the Tagbar window and come back so the update event gets triggered
+    execute 'wincmd p'
+    execute tagbarwinnr . 'wincmd w'
+
+    if !in_tagbar
+        execute 'wincmd p'
+    endif
+endfunction
+
 " s:MapKeys() {{{2
 function! s:MapKeys()
     nnoremap <script> <silent> <buffer> <CR>    :call <SID>JumpToTag(0)<CR>
@@ -841,7 +902,7 @@ function! s:MapKeys()
 
     nnoremap <script> <silent> <buffer> s    :call <SID>ToggleSort()<CR>
     nnoremap <script> <silent> <buffer> x    :call <SID>ZoomWindow()<CR>
-    nnoremap <script> <silent> <buffer> q    :close<CR>
+    nnoremap <script> <silent> <buffer> q    :call <SID>CloseWindow()<CR>
     nnoremap <script> <silent> <buffer> <F1> :call <SID>ToggleHelp()<CR>
 endfunction
 
@@ -860,6 +921,58 @@ function! s:CreateAutocommands()
     augroup END
 
     let s:autocommands_done = 1
+endfunction
+
+" s:CheckForExCtags() {{{2
+" Test whether the ctags binary is actually Exuberant Ctags and not GNU ctags
+" (or something else)
+function! s:CheckForExCtags()
+    let ctags_cmd = s:EscapeCtagsCmd(g:tagbar_ctags_bin, '--version')
+    if ctags_cmd == ''
+        return
+    endif
+
+    let ctags_output = s:ExecuteCtags(ctags_cmd)
+
+    if v:shell_error || ctags_output !~# 'Exuberant Ctags'
+        echoerr 'Tagbar: Ctags doesn''t seem to be Exuberant Ctags!'
+        echomsg 'GNU ctags will NOT WORK.'
+              \ 'Please download Exuberant Ctags from ctags.sourceforge.net'
+              \ 'and install it in a directory in your $PATH'
+              \ 'or set g:tagbar_ctags_bin.'
+        echomsg 'Executed command: "' . ctags_cmd . '"'
+        if !empty(ctags_output)
+            echomsg 'Command output:'
+            for line in split(ctags_output, '\n')
+                echomsg line
+            endfor
+        endif
+        return 0
+    elseif !s:CheckExCtagsVersion(ctags_output)
+        echoerr 'Tagbar: Exuberant Ctags is too old!'
+        echomsg 'You need at least version 5.5 for Tagbar to work.'
+              \ 'Please download a newer version from ctags.sourceforge.net.'
+        echomsg 'Executed command: "' . ctags_cmd . '"'
+        if !empty(ctags_output)
+            echomsg 'Command output:'
+            for line in split(ctags_output, '\n')
+                echomsg line
+            endfor
+        endif
+        return 0
+    else
+        let s:checked_ctags = 1
+        return 1
+    endif
+endfunction
+
+" s:CheckExCtagsVersion() {{{2
+function! s:CheckExCtagsVersion(output)
+    let matchlist = matchlist(a:output, '\vExuberant Ctags (\d+)\.(\d+)')
+    let major     = matchlist[1]
+    let minor     = matchlist[2]
+
+    return major >= 6 || (major == 5 && minor >= 5)
 endfunction
 
 " Prototypes {{{1
@@ -1284,10 +1397,6 @@ endfunction
 
 " s:OpenWindow() {{{2
 function! s:OpenWindow(autoclose)
-    if !s:type_init_done
-        call s:InitTypes()
-    endif
-
     " If the tagbar window is already open jump to it
     let tagbarwinnr = bufwinnr('__Tagbar__')
     if tagbarwinnr != -1
@@ -1295,6 +1404,16 @@ function! s:OpenWindow(autoclose)
             execute tagbarwinnr . 'wincmd w'
         endif
         return
+    endif
+
+    if !s:type_init_done
+        call s:InitTypes()
+    endif
+
+    if !s:checked_ctags
+        if !s:CheckForExCtags()
+            return
+        endif
     endif
 
     " Expand the Vim window to accomodate for the Tagbar window if requested
@@ -1306,6 +1425,20 @@ function! s:OpenWindow(autoclose)
     let openpos = g:tagbar_left ? 'topleft vertical ' : 'botright vertical '
     exe 'silent keepalt ' . openpos . g:tagbar_width . 'split ' . '__Tagbar__'
 
+    call s:InitWindow(a:autoclose)
+
+    execute 'wincmd p'
+
+    " Jump back to the tagbar window if autoclose or autofocus is set. Can't
+    " just stay in it since it wouldn't trigger the update event
+    if g:tagbar_autoclose || a:autoclose || g:tagbar_autofocus
+        let tagbarwinnr = bufwinnr('__Tagbar__')
+        execute tagbarwinnr . 'wincmd w'
+    endif
+endfunction
+
+" s:InitWindow() {{{2
+function! s:InitWindow(autoclose)
     setlocal noreadonly " in case the "view" mode is used
     setlocal buftype=nofile
     setlocal bufhidden=hide
@@ -1324,12 +1457,13 @@ function! s:OpenWindow(autoclose)
     endif
 
     setlocal nofoldenable
+    " Reset fold settings in case a plugin set them globally to something
+    " expensive. Apparently 'foldexpr' gets executed even if 'foldenable' is
+    " off, and then for every appended line (like with :put).
+    setlocal foldmethod&
+    setlocal foldexpr&
 
     setlocal statusline=%!TagbarGenerateStatusline()
-
-    " Variable for saving the current file for functions that are called from
-    " the tagbar window
-    let s:current_file = ''
 
     " Script-local variable needed since compare functions can't
     " take extra arguments
@@ -1357,15 +1491,6 @@ function! s:OpenWindow(autoclose)
     endif
 
     let &cpoptions = cpoptions_save
-
-    execute 'wincmd p'
-
-    " Jump back to the tagbar window if autoclose or autofocus is set. Can't
-    " just stay in it since it wouldn't trigger the update event
-    if g:tagbar_autoclose || a:autoclose || g:tagbar_autofocus
-        let tagbarwinnr = bufwinnr('__Tagbar__')
-        execute tagbarwinnr . 'wincmd w'
-    endif
 endfunction
 
 " s:CloseWindow() {{{2
@@ -1430,60 +1555,14 @@ function! s:ProcessFile(fname, ftype)
         return
     endif
 
-    let typeinfo = s:known_types[a:ftype]
+    let ctags_output = s:ExecuteCtagsOnFile(a:fname, a:ftype)
 
-    if has_key(typeinfo, 'ctagsargs')
-        let ctags_args = ' ' . typeinfo.ctagsargs . ' '
-    else
-        let ctags_args  = ' -f - '
-        let ctags_args .= ' --format=2 '
-        let ctags_args .= ' --excmd=pattern '
-        let ctags_args .= ' --fields=nksSa '
-        let ctags_args .= ' --extra= '
-        let ctags_args .= ' --sort=yes '
-
-        " Include extra type definitions
-        if has_key(typeinfo, 'deffile')
-            let ctags_args .= ' --options=' . typeinfo.deffile . ' '
-        endif
-
-        let ctags_type = typeinfo.ctagstype
-
-        let ctags_kinds = ''
-        for kind in typeinfo.kinds
-            let ctags_kinds .= kind.short
-        endfor
-
-        let ctags_args .= ' --language-force=' . ctags_type .
-                        \ ' --' . ctags_type . '-kinds=' . ctags_kinds . ' '
-    endif
-
-    if has_key(typeinfo, 'ctagsbin')
-        let ctags_bin = expand(typeinfo.ctagsbin)
-    else
-        let ctags_bin = g:tagbar_ctags_bin
-    endif
-
-    if has('win32') || has('win64')
-        let ctags_bin = fnamemodify(ctags_bin, ':8')
-    else
-        let ctags_bin = shellescape(ctags_bin)
-    endif
-    let ctags_cmd = ctags_bin . ctags_args . shellescape(a:fname)
-    let ctags_output = system(ctags_cmd)
-
-    if v:shell_error
-        echoerr 'Tagbar: Could not execute ctags for ' . a:fname . '!'
-        echomsg 'Executed command: "' . ctags_cmd . '"'
-        if !empty(ctags_output)
-            echomsg 'Command output:'
-            for line in split(ctags_output, '\n')
-                echomsg line
-            endfor
-        endif
+    if ctags_output == -1
         " put an empty entry into known_files so the error message is only
         " shown once
         call s:known_files.put({}, a:fname)
+        return
+    elseif ctags_output == ''
         return
     endif
 
@@ -1495,6 +1574,8 @@ function! s:ProcessFile(fname, ftype)
     else
         let fileinfo = s:FileInfo.New(a:fname, a:ftype)
     endif
+
+    let typeinfo = s:known_types[a:ftype]
 
     " Parse the ctags output lines
     let rawtaglist = split(ctags_output, '\n\+')
@@ -1557,6 +1638,64 @@ function! s:ProcessFile(fname, ftype)
     call fileinfo.sortTags()
 
     call s:known_files.put(fileinfo)
+endfunction
+
+" s:ExecuteCtagsOnFile() {{{2
+function! s:ExecuteCtagsOnFile(fname, ftype)
+    let typeinfo = s:known_types[a:ftype]
+
+    if has_key(typeinfo, 'ctagsargs')
+        let ctags_args = ' ' . typeinfo.ctagsargs . ' '
+    else
+        let ctags_args  = ' -f - '
+        let ctags_args .= ' --format=2 '
+        let ctags_args .= ' --excmd=pattern '
+        let ctags_args .= ' --fields=nksSa '
+        let ctags_args .= ' --extra= '
+        let ctags_args .= ' --sort=yes '
+
+        " Include extra type definitions
+        if has_key(typeinfo, 'deffile')
+            let ctags_args .= ' --options=' . typeinfo.deffile . ' '
+        endif
+
+        let ctags_type = typeinfo.ctagstype
+
+        let ctags_kinds = ''
+        for kind in typeinfo.kinds
+            let ctags_kinds .= kind.short
+        endfor
+
+        let ctags_args .= ' --language-force=' . ctags_type .
+                        \ ' --' . ctags_type . '-kinds=' . ctags_kinds . ' '
+    endif
+
+    if has_key(typeinfo, 'ctagsbin')
+        let ctags_bin = expand(typeinfo.ctagsbin)
+    else
+        let ctags_bin = g:tagbar_ctags_bin
+    endif
+
+    let ctags_cmd = s:EscapeCtagsCmd(ctags_bin, ctags_args, a:fname)
+    if ctags_cmd == ''
+        return ''
+    endif
+
+    let ctags_output = s:ExecuteCtags(ctags_cmd)
+
+    if v:shell_error || ctags_output =~ 'Warning: cannot open source file'
+        echoerr 'Tagbar: Could not execute ctags for ' . a:fname . '!'
+        echomsg 'Executed command: "' . ctags_cmd . '"'
+        if !empty(ctags_output)
+            echomsg 'Command output:'
+            for line in split(ctags_output, '\n')
+                echomsg line
+            endfor
+        endif
+        return -1
+    endif
+
+    return ctags_output
 endfunction
 
 " s:ParseTagline() {{{2
@@ -1911,6 +2050,8 @@ function! s:RenderContent(...)
 
     let lazyredraw_save = &lazyredraw
     set lazyredraw
+    let eventignore_save = &eventignore
+    set eventignore=all
 
     setlocal modifiable
 
@@ -1951,7 +2092,8 @@ function! s:RenderContent(...)
         call winline()
     endif
 
-    let &lazyredraw = lazyredraw_save
+    let &lazyredraw  = lazyredraw_save
+    let &eventignore = eventignore_save
 
     if !in_tagbar
         execute prevwinnr . 'wincmd w'
@@ -2177,7 +2319,30 @@ function! s:JumpToTag(stay_in_tagbar)
     endif
 
     let tagbarwinnr = winnr()
+
+    " This elaborate construct will try to switch to the correct
+    " buffer/window; if the buffer isn't currently shown in a window it will
+    " open it in the first window with a non-special buffer in it
     execute 'wincmd p'
+    let filebufnr = bufnr(taginfo.fileinfo.fpath)
+    if bufnr('%') != filebufnr
+        let filewinnr = bufwinnr(filebufnr)
+        if filewinnr != -1
+            execute filewinnr . 'wincmd w'
+        else
+            for i in range(1, winnr('$'))
+                execute i . 'wincmd w'
+                if &buftype == ''
+                    execute 'buffer ' . filebufnr
+                    break
+                endif
+            endfor
+        endif
+        " To make ctrl-w_p work we switch between the Tagbar window and the
+        " correct window once
+        execute tagbarwinnr . 'wincmd w'
+        execute 'wincmd p'
+    endif
 
     " Mark current position so it can be jumped back to
     mark '
@@ -2400,7 +2565,6 @@ endfunction
 function! s:CleanUp()
     silent autocmd! TagbarAutoCmds
 
-    unlet s:current_file
     unlet s:is_maximized
     unlet s:compare_typeinfo
     unlet s:short_help
@@ -2434,13 +2598,13 @@ function! s:AutoUpdate(fname)
         return
     endif
 
+    " Only consider the main filetype in cases like 'python.django'
+    let ftype = get(split(&filetype, '\.'), 0, '')
+
     " Don't do anything if the file isn't supported
-    if !s:IsValidFile(a:fname, &filetype)
+    if !s:IsValidFile(a:fname, ftype)
         return
     endif
-
-    " Only consider the main filetype in cases like 'python.django'
-    let ftype = split(&filetype, '\.')[0]
 
     " Process the file if it's unknown or the information is outdated
     " Also test for entries that exist but are empty, which will be the case
@@ -2488,6 +2652,76 @@ function! s:IsValidFile(fname, ftype)
     endif
 
     return 1
+endfunction
+
+" s:EscapeCtagsCmd() {{{2
+" Assemble the ctags command line in a way that all problematic characters are
+" properly escaped and converted to the system's encoding
+" Optional third parameter is a file name to run ctags on
+function! s:EscapeCtagsCmd(ctags_bin, args, ...)
+    if exists('+shellslash')
+        let shellslash_save = &shellslash
+        set noshellslash
+    endif
+
+    if a:0 == 1
+        let fname = shellescape(a:1)
+    else
+        let fname = ''
+    endif
+
+    let ctags_cmd = shellescape(a:ctags_bin) . ' ' . a:args . ' ' . fname
+
+    if exists('+shellslash')
+        let &shellslash = shellslash_save
+    endif
+
+    " Needed for cases where 'encoding' is different from the system's
+    " encoding
+    if g:tagbar_systemenc != &encoding
+        let ctags_cmd = iconv(ctags_cmd, &encoding, g:tagbar_systemenc)
+    elseif $LANG != ''
+        let ctags_cmd = iconv(ctags_cmd, &encoding, $LANG)
+    endif
+
+    if ctags_cmd == ''
+        echoerr 'Tagbar: Encoding conversion failed!'
+              \ 'Please make sure your system is set up correctly'
+              \ 'and that Vim is compiled with the "iconv" feature.'
+    endif
+
+    return ctags_cmd
+endfunction
+
+" s:ExecuteCtags() {{{2
+" Execute ctags with necessary shell settings
+" Partially based on the discussion at
+" http://vim.1045645.n5.nabble.com/bad-default-shellxquote-in-Widows-td1208284.html
+function! s:ExecuteCtags(ctags_cmd)
+    if exists('+shellslash')
+        let shellslash_save = &shellslash
+        set noshellslash
+    endif
+
+    if &shell =~ 'cmd\.exe'
+        let shellxquote_save = &shellxquote
+        set shellxquote=\"
+        let shellcmdflag_save = &shellcmdflag
+        set shellcmdflag=/s\ /c
+    endif
+
+    let ctags_output = system(a:ctags_cmd)
+
+    if &shell =~ 'cmd\.exe'
+        let &shellxquote  = shellxquote_save
+        let &shellcmdflag = shellcmdflag_save
+    endif
+
+    if exists('+shellslash')
+        let &shellslash = shellslash_save
+    endif
+
+    return ctags_output
 endfunction
 
 " s:GetTagInfo() {{{2

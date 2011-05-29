@@ -3,7 +3,7 @@
 Author:		Jan Larres <jan@majutsushi.net>
 Licence:	Vim licence, see |license|
 Homepage:	http://majutsushi.github.com/tagbar/
-Version:	2.0.1
+Version:	2.1
 
 ==============================================================================
 Contents					*tagbar* *tagbar-contents*
@@ -112,6 +112,12 @@ incompatibilities this may not always completely work. Tagbar has been tested
 with doctorjs/jsctags and will use that if present, other programs require
 some configuration (see |tagbar-extend|). If a program does not work even with
 correct configuration please contact me.
+
+Note: jsctags has to be newer than 2011-01-06 since it needs the "-f" option
+to work. Also, the output of jsctags seems to be a bit unreliable at the
+moment (especially regarding line numbers), so if you notice some strange
+behaviour with it please run it manually in a terminal to check whether the
+bug is in jsctags or Tagbar.
 
 ==============================================================================
 2. Requirements						*tagbar-requirements*
@@ -417,6 +423,21 @@ Example:
 	let g:tagbar_autoshowtag = 1
 <
 
+							*g:tagbar_systemenc*
+g:tagbar_systemenc~
+Default: value of 'encoding'
+
+This variable is for cases where the character encoding of your operating
+system is different from the one set in Vim, i.e. the 'encoding' option. For
+example, if you use a Simplified Chinese Windows version that has a system
+encoding of "cp936", and you have set 'encoding' to "utf-8", then you would
+have to set this variable to "cp936".
+
+Example:
+>
+	let g:tagbar_systemenc = 'cp936'
+<
+
 ------------------------------------------------------------------------------
 HIGHLIGHT COLOURS					*tagbar-highlight*
 
@@ -486,7 +507,9 @@ complicated cases.
 
 Tagbar has a flexible mechanism for extending the existing file type (i.e.
 language) definitions. This can be used both to change the settings of the
-existing types and to add completely new types.
+existing types and to add completely new types. A complete configuration
+consists of a type definition for Tagbar in your |vimrc| and optionally a
+language definition for ctags in case you want to add a new language.
 
 Every type definition in Tagbar is a dictionary with the following keys:
 
@@ -577,12 +600,13 @@ ctagsargs: The arguments to be passed to the filetype-specific ctags program
            program.
 
 
-You then have to assign this dictionary to a variable with the name
+You then have to assign this dictionary to a variable in your vimrc with the
+name
 >
 	g:tagbar_type_{vim filetype}
 <
 For example, for C++ the name would be "g:tagbar_type_cpp". If you don't know
-the vim file type run the following command:
+the vim file type then run the following command:
 >
 	:set filetype?
 <
@@ -779,6 +803,22 @@ files.
 
 ==============================================================================
 8. History						*tagbar-history*
+
+2.1 (2011-05-29)
+    - Make Tagbar work in (hopefully) all cases under Windows
+    - Handle cases where 'encoding' is different from system encoding, for
+      example on a Chinese Windows with 'encoding' set to "utf-8" (see manual
+      for details in case it doesn't work out-of-the-box)
+    - Fixed a bug with the handling of subtypes like "python.django"
+    - If a session got saved with Tagbar open it now gets restored properly
+    - Locally reset foldmethod/foldexpr in case foldexpr got set to something
+      expensive globally
+    - Tagbar now tries hard to go to the correct window when jumping to a tag
+    - Explain some possible issues with the current jsctags version in the
+      manual
+    - Explicitly check for some possible configuration problems to be able to
+      give better feedback
+    - A few other small fixes
 
 2.0.1 (2011-04-26)
     - Fix sorting bug when 'ignorecase' is set
