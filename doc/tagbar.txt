@@ -3,7 +3,7 @@
 Author:		Jan Larres <jan@majutsushi.net>
 Licence:	Vim licence, see |license|
 Homepage:	http://majutsushi.github.com/tagbar/
-Version:	2.2
+Version:	2.3
 
 ==============================================================================
 Contents					*tagbar* *tagbar-contents*
@@ -260,6 +260,14 @@ COMMANDS						*tagbar-commands*
     Open the parent folds of the current tag in the file window as much as
     needed for the tag to be visible in the Tagbar window.
 
+:TagbarDebug [logfile]
+    Start debug mode. This will write debug messages to file [logfile] while
+    using Tagbar. If no argument is given "tagbardebug.log" in the current
+    directory is used. Note: an existing file will be overwritten!
+
+:TagbarDebugEnd
+    End debug mode, debug messages will no longer be written to the logfile.
+
 ------------------------------------------------------------------------------
 KEY MAPPINGS						*tagbar-keys*
 
@@ -413,21 +421,22 @@ Example:
 	let g:tagbar_foldlevel = 2
 <
 
-							*g:tagbar_usearrows*
-g:tagbar_usearrows~
-{Windows only}
-Default: 0
+							*g:tagbar_iconchars*
+g:tagbar_iconchars~
 
-Tagbar can display nice Unicode arrows instead of +/- characters as fold icons.
-However, Windows doesn't seem to be able to substitute in characters from
-other fonts if the current font doesn't support them. This means that you have
-to use a font that supports those arrows. Unfortunately there is no way to
-detect whether specific characters are supported in the current font. So if
-your font supports those arrows you have to set this option to make it work.
+Since the display of the icons used to indicate open or closed folds depends
+on the actual font used, different characters may be optimal for different
+fonts. With this variable you can set the icons to characters of your liking.
+The first character in the list specifies the icon to use for a closed fold,
+and the second one for an open fold.
 
-Example:
+Examples (don't worry if some the characters aren't displayed correctly, just
+choose other characters in that case):
 >
-	let g:tagbar_usearrows = 1
+	let g:tagbar_iconchars = ['▶', '▼']  (default on Linux and Mac OS X)
+	let g:tagbar_iconchars = ['▾', '▸']
+	let g:tagbar_iconchars = ['▷', '◢']
+	let g:tagbar_iconchars = ['+', '-']  (default on Windows)
 <
 
 							*g:tagbar_autoshowtag*
@@ -528,19 +537,32 @@ See |:highlight| for more information.
 ------------------------------------------------------------------------------
 AUTOMATICALLY OPENING TAGBAR				*tagbar-autoopen*
 
-If you want Tagbar to open automatically, for example on Vim startup or for
-specific filetypes, there are various ways to do it. For example, to always
-open Tagbar on Vim startup you can put this into your vimrc file:
->
-    autocmd VimEnter * nested TagbarOpen
-<
-If you want to have it start for specific filetypes put
->
-    TagbarOpen
-<
-into a corresponding filetype plugin (see |filetype-plugin|).
+Since there are several different situations in which you might want to open
+Tagbar automatically there is no single option to enable automatic opening.
+Instead, autocommands can be used together with a convenience function that
+opens Tagbar only if a supported file is open(ed).
 
-Check out |autocmd.txt| if you want it to automatically open in more
+If you want to open Tagbar automatically on Vim startup no matter what put
+this into your vimrc:
+>
+    autocmd VimEnter * nested :TagbarOpen
+<
+If you want to open it only if you're opening Vim with a supported file/files
+use this instead:
+>
+    autocmd VimEnter * nested :call tagbar#autoopen()
+<
+For opening Tagbar also if you open a supported file in an already running
+Vim:
+>
+    autocmd FileType * nested :call tagbar#autoopen()
+<
+And if you only want to open Tagbar only for specific filetypes, not for all
+of the supported ones:
+>
+    autocmd FileType c,cpp nested :TagbarOpen
+<
+Check out |autocmd.txt| if you want it to open automatically in more
 complicated cases.
 
 ==============================================================================
@@ -552,15 +574,11 @@ existing types and to add completely new types. A complete configuration
 consists of a type definition for Tagbar in your |vimrc| and optionally a
 language definition for ctags in case you want to add a new language.
 
-Before writing your own extension try googling for already existing ones. For
-example, here is one for Scala:
-http://latestbuild.net/scala-ctags-and-vim-tagbar
-Since those aren't "canonical" configurations and are somewhat subjective they
-probably won't be included in Tagbar, but it is easy enough to just copy&paste
-them into your own setup. Note that you don't have to modify Tagbar directly
-like the article suggests, you can just put the configuration into your
-|vimrc| (see below for more details).
-
+Before writing your own extension have a look at the wiki
+(https://github.com/majutsushi/tagbar/wiki/Support-for-additional-filetypes)
+or try googling for existing ones. If you do end up creating your own
+extension please consider adding it to the wiki so that others will be able to
+use it, too.
 
 Every type definition in Tagbar is a dictionary with the following keys:
 
@@ -642,9 +660,9 @@ deffile:    The path to a file with additional ctags definitions (see the
 ctagsbin:  The path to a filetype-specific ctags-compatible program like
 {optional} jsctags. Set it in the same way as |g:tagbar_ctags_bin|. jsctags is
            used automatically if found in your $PATH and does not have to be
-           set in that case. If it is not in your path you have to provide the
-           complete configuration and use the "replace" key (see the
-           Tagbar source code for the suggested configuration).
+           set in that case. If it is not in your path you have to set this
+           key, the rest of the configuration should not be necessary (unless
+           you want to change something, of course).
 ctagsargs: The arguments to be passed to the filetype-specific ctags program
 {optional} (without the filename). Make sure you set an option that makes the
            program output its data on stdout. Not used for the normal ctags
@@ -821,6 +839,12 @@ ctags manually execute the following command in a terminal:
 If you set the |g:tagbar_ctags_bin| variable you probably have to use the same
 value here instead of simply "ctags".
 
+If Tagbar doesn't seem to work at all, but you don't get any error messages,
+you can use Tagbar's debug mode to try to find the source of the problem (see
+|tagbar-commands| on how to invoke it). In that case you should especially pay
+attention to the reported file type and the ctags command line in the log
+file.
+
 
   - jsctags has to be newer than 2011-01-06 since it needs the "-f" option to
     work. Also, the output of jsctags seems to be a bit unreliable at the
@@ -873,6 +897,16 @@ value here instead of simply "ctags".
 
 ==============================================================================
 8. History						*tagbar-history*
+
+2.3 (2011-12-24)
+    - Add a convenience function that allows more flexible ways to
+      automatically open Tagbar.
+    - Replace option tagbar_usearrows with tagbar_iconchars to allow custom
+      characters to be specified. This helps with fonts that don't display the
+      default characters properly.
+    - Remove the need to provide the complete jsctags configuration if jsctags
+      is not found in $PATH, now only the concrete path has to be specified.
+    - Add debugging functionality.
 
 2.2 (2011-11-26)
     - Small incompatible change: TagbarOpen now doesn't jump to the Tagbar

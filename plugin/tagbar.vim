@@ -4,7 +4,7 @@
 " Author:      Jan Larres <jan@majutsushi.net>
 " Licence:     Vim licence
 " Website:     http://majutsushi.github.com/tagbar/
-" Version:     2.2
+" Version:     2.3
 " Note:        This plugin was heavily inspired by the 'Taglist' plugin by
 "              Yegappan Lakshmanan and uses a small amount of code from it.
 "
@@ -78,8 +78,13 @@ if !exists('g:tagbar_foldlevel')
     let g:tagbar_foldlevel = 99
 endif
 
-if !exists('g:tagbar_usearrows')
-    let g:tagbar_usearrows = 0
+if !exists('g:tagbar_iconchars')
+    if has('multi_byte') && has('unix') && &encoding == 'utf-8' &&
+     \ (empty(&termencoding) || &termencoding == 'utf-8')
+        let g:tagbar_iconchars = ['▶', '▼']
+    else
+        let g:tagbar_iconchars = ['+', '-']
+    endif
 endif
 
 if !exists('g:tagbar_autoshowtag')
@@ -106,6 +111,8 @@ command! -nargs=0 TagbarOpenAutoClose call tagbar#OpenWindow('fc')
 command! -nargs=0 TagbarClose         call tagbar#CloseWindow()
 command! -nargs=1 TagbarSetFoldlevel  call tagbar#SetFoldLevel(<args>)
 command! -nargs=0 TagbarShowTag       call tagbar#OpenParents()
+command! -nargs=? TagbarDebug         call tagbar#StartDebug(<f-args>)
+command! -nargs=0 TagbarDebugEnd      call tagbar#StopDebug()
 
 " Modeline {{{1
 " vim: ts=8 sw=4 sts=4 et foldenable foldmethod=marker foldcolumn=1
